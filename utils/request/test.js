@@ -162,16 +162,13 @@ export default class Request {
 				data: _config.data,
 				header: _config.header,
 				method: _config.method,
-				// #ifdef MP-ALIPAY
 				timeout: _config.timeout,
-				// #endif
 				dataType: _config.dataType,
-				// #ifndef MP-ALIPAY || APP-PLUS
 				responseType: _config.responseType,
-				// #endif
 				// #ifdef APP-PLUS
 				sslVerify: _config.sslVerify,
 				// #endif
+				// 接口调用结束的回调函数（调用成功、失败都会执行）
 				complete: (response) => {
 					response.config = handleRe
 					if (this.validateStatus(response.statusCode)) { // 成功
@@ -185,4 +182,117 @@ export default class Request {
 			})
 		})
 	}
+
+	get(url, params = {}) {
+		const options = {};
+		options.params = params;
+		return this.request({
+			url,
+			method: 'GET',
+			...options
+		})
+	}
+
+	post(url, data, options = {}) {
+		return this.request({
+			url,
+			data,
+			method: 'POST',
+			...options
+		})
+	}
+
+	upload(url, {
+		files,
+		// #ifdef MP-ALIPAY
+		fileType,
+		// #endif
+		filePath,
+		name,
+		header,
+		formData = {},
+		custom = {},
+		params = {},
+		getTask
+	}) {
+		return new Promise((resolve, reject) => {
+			let next = true
+			const globalHeader = {
+				...this.config.header
+			}
+			delete globalHeader['content-type']
+			delete globalHeader['Content-Type']
+			const pubConfig = {
+				baseUrl: this.config.baseUrl,
+				url,
+				// #ifdef MP-ALIPAY
+				fileType,
+				// #endif
+				filePath,
+				method: 'UPLOAD',
+				name,
+				header: header || globalHeader,
+				formData,
+				params,
+				custom: {
+					...this.config.custom,
+					...custom
+				},
+				getTask: getTask || this.config.getTask
+			}
+			// #ifdef APP-PLUS
+			if (files) {
+				pubConfig.files = files
+			}
+			// #endif
+			const cancel = (t = 'handle cancel', config = pubConfig) => {
+				const err = {
+					errMsg: t,
+					config: config
+				}
+				reject(err)
+				next = false
+			}
+
+			const handleRe = {
+				...this.requestBeforeFun(pubConfig, cancel)
+			}
+			const _config = {
+				url: Request.mergeUrl(handleRe.url, handleRe.baseUrl, handleRe.params),
+				// #ifdef MP-ALIPAY
+				fileType: handleRe.fileType,
+				// #endif
+				filePath: handleRe.filePath,
+				name: handleRe.name,
+				header: handleRe.header,
+				formData: handleRe.formData,
+				complete: (response) => {
+					response.config = handleRe
+					if (typeof response.data === 'string') {
+						response.data = JSON.parse(response.data)
+					}
+					if (this.validateStatus(response.statusCode)) { // 成功
+						response = this.requestComFun(response)
+						resolve(response)
+					} else {
+						response = this.requestComFail(response)
+						reject(response)
+					}
+				}
+			}
+			// #ifdef APP-PLUS
+			if (handleRe.files) {
+				_config.files = handleRe.files
+			}
+			// #endif
+			if (!next) return
+			const requestTask = uni.uploadFile(_config)
+			if (handleRe.getTask) {
+				handleRe.getTask(requestTask, handleRe)
+			}
+		})
+	}
+
+
+
 }
